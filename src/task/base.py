@@ -104,12 +104,6 @@ class BaseTask:
         interval = 60 // self.sensors.camera_freq
         replay_count = 0
 
-        time0 = []
-        time1 = []
-        time2 = []
-        time3 = []
-        time4 = []
-
         while simulation_app.is_running():
             # 推进仿真并渲染
             self.scenary.step(render=True)
@@ -139,18 +133,13 @@ class BaseTask:
                         if replay_count == (self.dataset[trajectory_index]['action'].shape[0] - 1):
                             break
                     else:
-                        time0.append(time.time())
 
                         # 获取传感器数据
                         data = self.get_raw_data()
                         data['reset'] = reset
 
-                        time1.append(time.time())
-
                         # publish sensor data
                         self.node.send_output("raw_data", pa.array([data]), metadata={})
-
-                        time2.append(time.time())
 
                         # subscribe action
                         action = None
@@ -162,7 +151,6 @@ class BaseTask:
                                 action = event["value"].to_pylist()
                                 action = np.array(action)
                         
-                        time3.append(time.time())
 
                     # 控制机器人
                     if action is None:
@@ -175,21 +163,9 @@ class BaseTask:
                         self.robot.apply_action(target_action.joint_positions,target_action.joint_indices)
                         self.robot.apply_gripper_width(gripper_width)
                     
-                    time4.append(time.time())
 
                 i = i +1 
         
-        with open("./time_isaacsim.txt", "w") as f:
-            f.write(str(time0))
-            f.write("\n")
-            f.write(str(time1))
-            f.write("\n")
-            f.write(str(time2))
-            f.write("\n")
-            f.write(str(time3))
-            f.write("\n")
-            f.write(str(time4))
-            f.write("\n")
         simulation_app.close()
 
 

@@ -140,9 +140,6 @@ def main():
         print(">>> failed")
         return
     
-    time0 = []
-    time1 = []
-
     raw_data = None
     for event in node:
         if event["type"] == "INPUT":
@@ -153,14 +150,8 @@ def main():
             #         node.send_output(output_id="action", data=pa.array(action), metadata={})
             if event_id == "raw_data":
                 raw_data = event["value"].to_pylist()[0]
-                time0.append(time.time())
                 action = inference(raw_data)
-                time1.append(time.time())
                 node.send_output(output_id="action", data=pa.array(action), metadata={})
-    with open("./time_server.txt", "w") as f:
-        f.write(str(time0))
-        f.write("\n")
-        f.write(str(time1))
 
 
 def debug():
