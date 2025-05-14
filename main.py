@@ -1,4 +1,3 @@
-
 from omni.isaac.kit import SimulationApp
 simulation_app = SimulationApp({"headless": False})
 
@@ -27,11 +26,6 @@ def main(cfg: DictConfig):
     robot_config = cfg.robot
     robot = hydra.utils.instantiate(robot_config)
     print(f"Robot initialized at {robot.robot_prim_path}")
-
-    # 创建控制器（如果有的话）
-    controller_config = cfg.controller
-    controller = hydra.utils.instantiate(controller_config)
-    print("Controller initialized")
   
     # 创建数据集
     if cfg.dataset is not None:
@@ -44,7 +38,7 @@ def main(cfg: DictConfig):
         task_config,
         scenary=scenary,
         robot=robot,
-        controller=controller,
+        # controller=controller,
         sensors=sensors,
         dataset=dataset,
     )

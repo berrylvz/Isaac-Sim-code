@@ -5,19 +5,25 @@ import os
 from src.utils import quaternion_to_rotvec,set_prim_transform
 from PIL import Image
 import random
+import sys
+from multiprocessing import shared_memory
+import pickle
+from dora import Node
+import pyarrow as pa
+import time
 
 class BaseTask:
     def __init__(self,
                  scenary,
                  robot,
-                 controller,
+                #  controller,
                  sensors,
                  dataset=None,
                  replay_horizon = 0,
                  replay_trajectory_index = 0):
         self.scenary = scenary
         self.robot = robot
-        self.controller = controller
+        # self.controller = controller
         self.sensors = sensors
 
         self.reset_needed = False
@@ -25,13 +31,20 @@ class BaseTask:
         self.replay_horizon = replay_horizon if replay_horizon != -1 else self.dataset[0]['action'].shape[0]
         self.replay_trajectory_index = replay_trajectory_index
 
+        dora_env = os.getenv('DORA_NODE_CONFIG')
+        if dora_env is None or dora_env == "---":
+            print(">>> failed")
+            return
+        self.node = Node()
+        print("isaacsim done")
+
         # build task
         self.build()
 
     def reset(self):
         self.scenary.reset()
         self.robot.reset()
-        self.controller.reset()
+        # self.controller.reset()
         self.sensors.reset()
 
     def build(self):
@@ -45,24 +58,37 @@ class BaseTask:
         self.sensors.spawn()
 
         # 4. 创建控制器    
-        self.controller.spawn(self.robot)
+        # self.controller.spawn(self.robot)
 
         # 5. 重置环境
         self.reset()
 
     def get_raw_data(self):
         rgb_data = self.sensors.get_data()
+        height, width, channels = rgb_data.shape
+        rgb_layout = {
+            'height': height, 
+            'width': width, 
+            'channels': channels
+        }
 
         ee_pose = self.robot.get_ee_pose()
+        ee_pose = list(np.concatenate([ee_pose[0], ee_pose[1]]))
+
         joint_pos = self.robot.get_joint_position()
+        joint_pos = list(joint_pos)
 
         init_ee_pose = self.robot.get_init_ee_pose()
+        init_ee_pose = list(np.concatenate([init_ee_pose[0], init_ee_pose[1]]))
+
         init_joint_pos = self.robot.get_init_joint_pos()
+        init_joint_pos = list(init_joint_pos)
 
         gripper_width = self.robot.get_gripper_width()
 
         data = {
-            'rgb_data': rgb_data,
+            'rgb_data': rgb_data.flatten().tolist(),
+            'rgb_layout': rgb_layout, 
             'ee_pose': ee_pose,
             'joint_pos': joint_pos,
             'init_ee_pose': init_ee_pose,
@@ -77,6 +103,13 @@ class BaseTask:
         i = 0
         interval = 60 // self.sensors.camera_freq
         replay_count = 0
+
+        time0 = []
+        time1 = []
+        time2 = []
+        time3 = []
+        time4 = []
+
         while simulation_app.is_running():
             # 推进仿真并渲染
             self.scenary.step(render=True)
@@ -106,14 +139,34 @@ class BaseTask:
                         if replay_count == (self.dataset[trajectory_index]['action'].shape[0] - 1):
                             break
                     else:
+                        time0.append(time.time())
+
                         # 获取传感器数据
                         data = self.get_raw_data()
                         data['reset'] = reset
 
-                        # 获取动作
-                        action = self.controller.forward(data)
+                        time1.append(time.time())
+
+                        # publish sensor data
+                        self.node.send_output("raw_data", pa.array([data]), metadata={})
+
+                        time2.append(time.time())
+
+                        # subscribe action
+                        action = None
+                        event = self.node.next()
+                        if event is None:
+                            continue
+                        if event["type"] == "INPUT":
+                            if event["id"] == "action":
+                                action = event["value"].to_pylist()
+                                action = np.array(action)
+                        
+                        time3.append(time.time())
 
                     # 控制机器人
+                    if action is None:
+                        continue
                     if isinstance(action, np.ndarray):
                         self.robot.apply_action(action)
                     elif isinstance(action,tuple) and isinstance(action[0],ArticulationAction): # Joint position + gripper width
@@ -121,10 +174,24 @@ class BaseTask:
                         gripper_width = action[1]
                         self.robot.apply_action(target_action.joint_positions,target_action.joint_indices)
                         self.robot.apply_gripper_width(gripper_width)
+                    
+                    time4.append(time.time())
 
                 i = i +1 
-
+        
+        with open("./time_isaacsim.txt", "w") as f:
+            f.write(str(time0))
+            f.write("\n")
+            f.write(str(time1))
+            f.write("\n")
+            f.write(str(time2))
+            f.write("\n")
+            f.write(str(time3))
+            f.write("\n")
+            f.write(str(time4))
+            f.write("\n")
         simulation_app.close()
+
 
 class StackCubeDataCollect(BaseTask):
     def get_next_episode_dir(self,base_dir):

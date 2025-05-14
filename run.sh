@@ -1,4 +1,4 @@
-isaac_sim_root=~/software/isaac_sim
+isaac_sim_root=~/isaacsim
 
 workspaceFolder="$(pwd)"
 
@@ -21,6 +21,7 @@ if [[ -f "$ENV_FILE" ]]; then
     done < "$ENV_FILE"
 fi
 
+
 # 3. 指定 Python 解释器
 PYTHON_EXECUTABLE="${isaac_sim_root}/kit/python/bin/python3"
 
@@ -29,11 +30,11 @@ export CARB_APP_PATH=${isaac_sim_root}/kit
 export ISAAC_PATH=${isaac_sim_root} 
 export EXP_PATH=${isaac_sim_root}/apps 
 source ${isaac_sim_root}/setup_python_env.sh 
-printenv >${workspaceFolder}/.vscode/.standalone_examples.env
+# printenv >${workspaceFolder}/.vscode/.standalone_examples.env
 
 echo "$PYTHON_EXECUTABLE"
 
-source ./catkin_ws/devel/setup.bash
+# source ./catkin_ws/devel/setup.bash
 # 5. 运行 Python 脚本
 
 config=$1

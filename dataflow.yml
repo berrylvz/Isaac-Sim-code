@@ -1,0 +1,31 @@
+nodes:
+  - id: isaac-sim
+    path: bash
+    args: ./run.sh stack_cube_act_v3
+    inputs:
+      action: server/action
+    outputs:
+      - raw_data
+
+  # - id: perception
+  #   path: ./perception.py
+  #   inputs:
+  #     raw_data: isaac-sim/raw_data
+  #   outputs:
+  #     - raw_data
+
+  - id: server
+    path: ./act/server.py
+    args: --task_name stake_cube_scripted --ckpt_dir act/ckpt/stack_cube_simv3 --policy_class ACT --kl_weight 10 --chunk_size 20 --hidden_dim 512 --batch_size 8 --dim_feedforward 3200 --num_epochs 2000  --lr 1e-5 --seed 0 --eval --temporal_agg
+    inputs:
+      raw_data: isaac-sim/raw_data
+    outputs:
+      - action
+  
+  # - id: controller
+  #   path: ./controller.py
+  #   inputs:
+  #     action: server/action
+  #   outputs:
+  #     - action
+  

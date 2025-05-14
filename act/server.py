@@ -18,14 +18,16 @@ from utils import compute_dict_mean, set_seed, detach_dict # helper functions
 from policy import ACTPolicy, CNNMLPPolicy
 from visualize_episodes import save_videos
 
-import rospy
-from act_dp_service.srv import get_action, get_actionResponse
-from std_msgs.msg import Float64MultiArray
+# import rospy
+# from act_dp_service.srv import get_action, get_actionResponse
+# from std_msgs.msg import Float64MultiArray
+
+from dora import Node
+import pyarrow as pa
+import time
 
 exp_weight = 0.1
 is_degree = False
-
-
 
 def make_policy(policy_class, policy_config):
     if policy_class == 'ACT':
@@ -35,7 +37,6 @@ def make_policy(policy_class, policy_config):
     else:
         raise NotImplementedError
     return policy
-
 
 def make_optimizer(policy_class, policy):
     if policy_class == 'ACT':
@@ -60,14 +61,14 @@ def inference(raw_data):
     global t
     global all_actions
     
-    cur_joint_pos = np.array(raw_data.sensor.joint_pos.data).reshape(-1)
-    reset = bool(raw_data.sensor.reset.data)
+    cur_joint_pos = np.array(raw_data['joint_pos']).reshape(-1)
+    reset = bool(raw_data['reset'])
 
     # 2. 解码图像
-    rgb_flat = np.frombuffer(bytes(raw_data.sensor.rgb_data.data), dtype=np.uint8)
-    height = raw_data.sensor.rgb_data.layout.dim[0].size
-    width = raw_data.sensor.rgb_data.layout.dim[1].size
-    channels = raw_data.sensor.rgb_data.layout.dim[2].size
+    rgb_flat = np.frombuffer(bytes(raw_data['rgb_data']), dtype=np.uint8)
+    height = raw_data['rgb_layout']['height']
+    width = raw_data['rgb_layout']['width']
+    channels = raw_data['rgb_layout']['channels']
     rgb_img = rgb_flat.reshape((height, width, channels))
 
     policy.eval()
@@ -126,12 +127,41 @@ def inference(raw_data):
             temp = target_qpos[-1]
             target_qpos = target_qpos / 180 * np.pi
             target_qpos[-1] =  temp * 0.04
+        
+        # a = Float64MultiArray(data = target_qpos.tolist()) # 
+        # return get_actionResponse(a)   
+        return target_qpos.tolist()
 
-        print(target_qpos)
-        a = Float64MultiArray(data = target_qpos.tolist()) # 
-        return get_actionResponse(a)   
+def main():
+    node = Node()
+    print("server done")
+    dora_env = os.getenv('DORA_NODE_CONFIG')
+    if dora_env is None or dora_env == "---":
+        print(">>> failed")
+        return
+    
+    time0 = []
+    time1 = []
 
-   
+    raw_data = None
+    for event in node:
+        if event["type"] == "INPUT":
+            event_id = event["id"]
+            # if event_id == "tick":
+            #     if raw_data is not None:
+            #         action = inference(raw_data)
+            #         node.send_output(output_id="action", data=pa.array(action), metadata={})
+            if event_id == "raw_data":
+                raw_data = event["value"].to_pylist()[0]
+                time0.append(time.time())
+                action = inference(raw_data)
+                time1.append(time.time())
+                node.send_output(output_id="action", data=pa.array(action), metadata={})
+    with open("./time_server.txt", "w") as f:
+        f.write(str(time0))
+        f.write("\n")
+        f.write(str(time1))
+
 
 def debug():
     import debugpy
@@ -242,6 +272,7 @@ temporal_agg = config['temporal_agg']
 # load policy and stats
 ckpt_path = os.path.join(ckpt_dir, ckpt_name)
 policy = make_policy(policy_class, policy_config)
+print(ckpt_path)
 loading_status = policy.load_state_dict(torch.load(ckpt_path))
 print(loading_status)
 policy.cuda()
@@ -273,6 +304,6 @@ qpos_list = []
 target_qpos_list = []
 all_actions = []
 t = 0
-rospy.init_node('policy_network_node')  
-s = rospy.Service('sensor_processing', get_action, inference)
-rospy.spin()   # 就像订阅者示例一样，rospy.spin()使代码不会退出，直到服务关闭；
+
+
+main()
