@@ -61,15 +61,27 @@ def inference(raw_data):
     global t
     global all_actions
     
-    cur_joint_pos = np.array(raw_data['joint_pos']).reshape(-1)
-    reset = bool(raw_data['reset'])
+    # cur_joint_pos = np.array(raw_data['joint_pos']).reshape(-1)
+    # multiple = raw_data[2][0]
+    # cur_joint_pos = (raw_data[4].astype(np.float64) / multiple).reshape(-1)
+    # reset = bool(raw_data['reset'])
 
     # 2. 解码图像
-    rgb_flat = np.frombuffer(bytes(raw_data['rgb_data']), dtype=np.uint8)
-    height = raw_data['rgb_layout']['height']
-    width = raw_data['rgb_layout']['width']
-    channels = raw_data['rgb_layout']['channels']
+    # rgb_flat = np.frombuffer(bytes(raw_data['rgb_data']), dtype=np.uint8)
+    # height = raw_data['rgb_layout']['height']
+    # width = raw_data['rgb_layout']['width']
+    # channels = raw_data['rgb_layout']['channels']
+    # rgb_flat = raw_data[0].astype(np.uint8)
+    # height, width, channels = tuple(raw_data[1].astype(np.int32))
+
+    height, width, channels, multiple, gripper_width, len_ee, len_joint = tuple(raw_data[:7].tolist())
+    rgb_data_end = 7 + height * width * channels
+    rgb_flat = raw_data[7: rgb_data_end].copy().astype(np.uint8)
     rgb_img = rgb_flat.reshape((height, width, channels))
+
+    joint_pos_start = rgb_data_end + len_ee
+    cur_joint_pos = raw_data[joint_pos_start: joint_pos_start + len_joint].copy().astype(np.float64)
+    cur_joint_pos = (cur_joint_pos / multiple).reshape(-1)
 
     policy.eval()
     # 3. 处理并返回
@@ -140,6 +152,9 @@ def main():
         print(">>> failed")
         return
     
+    time0 = []
+    time1 = []
+
     raw_data = None
     for event in node:
         if event["type"] == "INPUT":
@@ -149,9 +164,17 @@ def main():
             #         action = inference(raw_data)
             #         node.send_output(output_id="action", data=pa.array(action), metadata={})
             if event_id == "raw_data":
-                raw_data = event["value"].to_pylist()[0]
+                # raw_data = event["value"].to_pylist()[0]
+                # raw_data = event["value"].to_pandas()
+                raw_data = event["value"].to_numpy()
+                time0.append(time.perf_counter_ns())
                 action = inference(raw_data)
+                time1.append(time.perf_counter_ns())
                 node.send_output(output_id="action", data=pa.array(action), metadata={})
+    with open("./time_server.txt", "w") as f:
+        f.write(str(time0))
+        f.write("\n")
+        f.write(str(time1))
 
 
 def debug():

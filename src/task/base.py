@@ -11,6 +11,7 @@ import pickle
 from dora import Node
 import pyarrow as pa
 import time
+import pandas as pd
 
 class BaseTask:
     def __init__(self,
@@ -66,11 +67,8 @@ class BaseTask:
     def get_raw_data(self):
         rgb_data = self.sensors.get_data()
         height, width, channels = rgb_data.shape
-        rgb_layout = {
-            'height': height, 
-            'width': width, 
-            'channels': channels
-        }
+
+        multiple = 10 ** 10
 
         ee_pose = self.robot.get_ee_pose()
         ee_pose = list(np.concatenate([ee_pose[0], ee_pose[1]]))
@@ -86,15 +84,28 @@ class BaseTask:
 
         gripper_width = self.robot.get_gripper_width()
 
-        data = {
-            'rgb_data': rgb_data.flatten().tolist(),
-            'rgb_layout': rgb_layout, 
-            'ee_pose': ee_pose,
-            'joint_pos': joint_pos,
-            'init_ee_pose': init_ee_pose,
-            'init_joint_pos': init_joint_pos,
-            'gripper_width': gripper_width
-        }
+        data = [height, width, channels, multiple, gripper_width * multiple, len(ee_pose), len(joint_pos)]
+        data.extend(rgb_data.flatten().tolist())
+        data.extend([i * multiple for i in ee_pose])
+        data.extend([i * multiple for i in joint_pos])
+        data.extend([i * multiple for i in init_ee_pose])
+        data.extend([i * multiple for i in init_joint_pos])
+
+        # data = [
+        #     rgb_data.flatten().tolist(),
+        #     [height, width, channels], 
+        #     [multiple], 
+        #     [i * multiple for i in ee_pose], 
+        #     [i * multiple for i in joint_pos], 
+        #     [i * multiple for i in init_ee_pose], 
+        #     [i * multiple for i in init_joint_pos], 
+        #     [gripper_width * multiple]
+        #     # 'ee_pose': ee_pose,
+        #     # 'joint_pos': joint_pos,
+        #     # 'init_ee_pose': init_ee_pose,
+        #     # 'init_joint_pos': init_joint_pos,
+        #     # 'gripper_width': gripper_width
+        # ]
         return data
 
     def run(self,simulation_app):
@@ -103,6 +114,12 @@ class BaseTask:
         i = 0
         interval = 60 // self.sensors.camera_freq
         replay_count = 0
+
+        time0 = []
+        time1 = []
+        time2 = []
+        time3 = []
+        time4 = []
 
         while simulation_app.is_running():
             # 推进仿真并渲染
@@ -133,13 +150,20 @@ class BaseTask:
                         if replay_count == (self.dataset[trajectory_index]['action'].shape[0] - 1):
                             break
                     else:
+                        time0.append(time.perf_counter_ns())
 
                         # 获取传感器数据
                         data = self.get_raw_data()
-                        data['reset'] = reset
+                        # data = pd.Series(data)
+                        data = np.array(data, dtype=np.int64)
+                        # data['reset'] = reset
+
+                        time1.append(time.perf_counter_ns())
 
                         # publish sensor data
-                        self.node.send_output("raw_data", pa.array([data]), metadata={})
+                        self.node.send_output("raw_data", pa.array(data), metadata={})
+
+                        time2.append(time.perf_counter_ns())
 
                         # subscribe action
                         action = None
@@ -151,6 +175,7 @@ class BaseTask:
                                 action = event["value"].to_pylist()
                                 action = np.array(action)
                         
+                        time3.append(time.perf_counter_ns())
 
                     # 控制机器人
                     if action is None:
@@ -163,9 +188,20 @@ class BaseTask:
                         self.robot.apply_action(target_action.joint_positions,target_action.joint_indices)
                         self.robot.apply_gripper_width(gripper_width)
                     
+                    time4.append(time.perf_counter_ns())
 
                 i = i +1 
         
+        with open("./time_isaacsim.txt", "w") as f:
+            f.write(str(time0))
+            f.write("\n")
+            f.write(str(time1))
+            f.write("\n")
+            f.write(str(time2))
+            f.write("\n")
+            f.write(str(time3))
+            f.write("\n")
+            f.write(str(time4))
         simulation_app.close()
 
 
