@@ -12,6 +12,7 @@ from dora import Node
 import pyarrow as pa
 import time
 import pandas as pd
+import copy
 
 class BaseTask:
     def __init__(self,
@@ -68,7 +69,7 @@ class BaseTask:
         rgb_data = self.sensors.get_data()
         height, width, channels = rgb_data.shape
 
-        multiple = 10 ** 10
+        # multiple = 10 ** 10
 
         ee_pose = self.robot.get_ee_pose()
         ee_pose = list(np.concatenate([ee_pose[0], ee_pose[1]]))
@@ -84,12 +85,14 @@ class BaseTask:
 
         gripper_width = self.robot.get_gripper_width()
 
-        data = [height, width, channels, multiple, gripper_width * multiple, len(ee_pose), len(joint_pos)]
-        data.extend(rgb_data.flatten().tolist())
-        data.extend([i * multiple for i in ee_pose])
-        data.extend([i * multiple for i in joint_pos])
-        data.extend([i * multiple for i in init_ee_pose])
-        data.extend([i * multiple for i in init_joint_pos])
+        return rgb_data.flatten(), height, width, channels, ee_pose, joint_pos, init_ee_pose, init_joint_pos, gripper_width
+
+        # data = [height, width, channels, multiple, gripper_width * multiple, len(ee_pose), len(joint_pos)]
+        # data.extend(rgb_data.flatten().tolist())
+        # data.extend([i * multiple for i in ee_pose])
+        # data.extend([i * multiple for i in joint_pos])
+        # data.extend([i * multiple for i in init_ee_pose])
+        # data.extend([i * multiple for i in init_joint_pos])
 
         # data = [
         #     rgb_data.flatten().tolist(),
@@ -106,7 +109,7 @@ class BaseTask:
         #     # 'init_joint_pos': init_joint_pos,
         #     # 'gripper_width': gripper_width
         # ]
-        return data
+        # return data
 
     def run(self,simulation_app):
         world = self.scenary.world
@@ -153,15 +156,32 @@ class BaseTask:
                         time0.append(time.perf_counter_ns())
 
                         # 获取传感器数据
-                        data = self.get_raw_data()
-                        # data = pd.Series(data)
-                        data = np.array(data, dtype=np.int64)
-                        # data['reset'] = reset
-
+                        rgb_data, height, width, channels, ee_pose, joint_pos, init_ee_pose, init_joint_pos, gripper_width = self.get_raw_data()
                         time1.append(time.perf_counter_ns())
 
+                        # data = pd.Series(data)
+                        # data = np.array(data, dtype=np.int64)
+                        # data['reset'] = reset
+
+                        # multiple = 10 ** 10
+
+                        metadata={
+                            "h":height, 
+                            "w": width, 
+                            "c": channels, 
+                            "e": str(ee_pose), 
+                            "j": str(joint_pos), 
+                            "ie": str(init_ee_pose), 
+                            "ij": str(init_joint_pos), 
+                            "g": str(gripper_width)
+                        }
+
                         # publish sensor data
-                        self.node.send_output("raw_data", pa.array(data), metadata={})
+                        self.node.send_output(
+                            output_id="raw_data", 
+                            data=pa.array(rgb_data), 
+                            metadata=metadata
+                        )
 
                         time2.append(time.perf_counter_ns())
 

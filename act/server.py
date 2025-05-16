@@ -25,6 +25,7 @@ from visualize_episodes import save_videos
 from dora import Node
 import pyarrow as pa
 import time
+import json
 
 exp_weight = 0.1
 is_degree = False
@@ -57,7 +58,7 @@ def get_image(image):
 
     return image
 
-def inference(raw_data):
+def inference(raw_data, meta_data):
     global t
     global all_actions
     
@@ -74,14 +75,21 @@ def inference(raw_data):
     # rgb_flat = raw_data[0].astype(np.uint8)
     # height, width, channels = tuple(raw_data[1].astype(np.int32))
 
-    height, width, channels, multiple, gripper_width, len_ee, len_joint = tuple(raw_data[:7].tolist())
-    rgb_data_end = 7 + height * width * channels
-    rgb_flat = raw_data[7: rgb_data_end].copy().astype(np.uint8)
-    rgb_img = rgb_flat.reshape((height, width, channels))
+    # height, width, channels, multiple, gripper_width, len_ee, len_joint = tuple(raw_data[:7].tolist())
+    # rgb_data_end = 7 + height * width * channels
+    # rgb_flat = raw_data[7: rgb_data_end].copy().astype(np.uint8)
+    # rgb_img = rgb_flat.reshape((height, width, channels))
 
-    joint_pos_start = rgb_data_end + len_ee
-    cur_joint_pos = raw_data[joint_pos_start: joint_pos_start + len_joint].copy().astype(np.float64)
-    cur_joint_pos = (cur_joint_pos / multiple).reshape(-1)
+    # joint_pos_start = rgb_data_end + len_ee
+    # cur_joint_pos = raw_data[joint_pos_start: joint_pos_start + len_joint].copy().astype(np.float64)
+    # cur_joint_pos = (cur_joint_pos / multiple).reshape(-1)
+
+    rgb_flat = raw_data.astype(dtype=np.uint8)
+    height = meta_data["h"]
+    width = meta_data["w"]
+    channels = meta_data["c"]
+    rgb_img = rgb_flat.reshape((height, width, channels))
+    cur_joint_pos = np.array(json.loads(meta_data["j"]), dtype=np.float64).reshape(-1)
 
     policy.eval()
     # 3. 处理并返回
@@ -164,11 +172,11 @@ def main():
             #         action = inference(raw_data)
             #         node.send_output(output_id="action", data=pa.array(action), metadata={})
             if event_id == "raw_data":
-                # raw_data = event["value"].to_pylist()[0]
-                # raw_data = event["value"].to_pandas()
+                # print(event["metadata"])
                 raw_data = event["value"].to_numpy()
+                meta_data = event["metadata"]
                 time0.append(time.perf_counter_ns())
-                action = inference(raw_data)
+                action = inference(raw_data, meta_data)
                 time1.append(time.perf_counter_ns())
                 node.send_output(output_id="action", data=pa.array(action), metadata={})
     with open("./time_server.txt", "w") as f:
